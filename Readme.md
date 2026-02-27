@@ -9,4 +9,4 @@ Installe automatiquement :
 
 ## One-liner
 ```bash
-curl -fsSL https://github.com/Rookye/zsh-bootstrap/main/install.sh | bash
+curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/install.sh | bash
