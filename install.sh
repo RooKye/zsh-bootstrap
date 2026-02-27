@@ -15,4 +15,6 @@ chmod +x bootstrap-deb-zsh.sh
 echo "[+] Run bootstrap..."
 ./bootstrap-deb-zsh.sh ./zsh-config.tar.gz
 
-echo "[+] Done. Reload your shell with: exec zsh"
+echo "[+] Setting zsh as default shell (may require password)"
+chsh -s "$(command -v zsh)" || true
+echo "[!] IMPORTANT: Log out/in (or restart terminal) for default shell to switch to zsh."
