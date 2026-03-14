@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 set -euo pipefail
 
-REPO_RAW_BASE="https://github.com/RooKye/zsh-bootstrap"
+REPO_RAW_BASE="https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main"
 
 tmp="$(mktemp -d)"
 cd "$tmp"
@@ -17,4 +17,5 @@ echo "[+] Run bootstrap..."
 
 echo "[+] Setting zsh as default shell (may require password)"
 chsh -s "$(command -v zsh)" || true
+
 echo "[!] IMPORTANT: Log out/in (or restart terminal) for default shell to switch to zsh."
