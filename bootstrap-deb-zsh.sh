@@ -95,14 +95,25 @@ if [[ -n "$ARCHIVE" ]]; then
   tmp="$(mktemp -d)"
   tar -xzf "$ARCHIVE" -C "$tmp"
 
-  SRC_ZSHRC=""
-  SRC_P10K=""
+SRC_ZSHRC=""
+SRC_P10K=""
 
-  # supporte archive avec home/<user>/... ou fichiers direct
-  [[ -f "$tmp/home/$USER/.zshrc" ]] && SRC_ZSHRC="$tmp/home/$USER/.zshrc"
-  [[ -f "$tmp/home/$USER/.p10k.zsh" ]] && SRC_P10K="$tmp/home/$USER/.p10k.zsh"
-  [[ -z "$SRC_ZSHRC" && -f "$tmp/.zshrc" ]] && SRC_ZSHRC="$tmp/.zshrc"
-  [[ -z "$SRC_P10K"  && -f "$tmp/.p10k.zsh" ]] && SRC_P10K="$tmp/.p10k.zsh"
+# 1) current user path
+[[ -f "$tmp/home/$USER/.zshrc" ]] && SRC_ZSHRC="$tmp/home/$USER/.zshrc"
+[[ -f "$tmp/home/$USER/.p10k.zsh" ]] && SRC_P10K="$tmp/home/$USER/.p10k.zsh"
+
+# 2) direct root of archive
+[[ -z "$SRC_ZSHRC" && -f "$tmp/.zshrc" ]] && SRC_ZSHRC="$tmp/.zshrc"
+[[ -z "$SRC_P10K"  && -f "$tmp/.p10k.zsh" ]] && SRC_P10K="$tmp/.p10k.zsh"
+
+# 3) fallback: any archived home user
+if [[ -z "$SRC_ZSHRC" ]]; then
+  SRC_ZSHRC="$(find "$tmp" -type f -name '.zshrc' | head -n 1 || true)"
+fi
+
+if [[ -z "$SRC_P10K" ]]; then
+  SRC_P10K="$(find "$tmp" -type f -name '.p10k.zsh' | head -n 1 || true)"
+fi
 
   [[ -n "$SRC_ZSHRC" ]] && cp "$SRC_ZSHRC" "$HOME/.zshrc" || warn "Pas de .zshrc dans l’archive"
   [[ -n "$SRC_P10K"  ]] && cp "$SRC_P10K"  "$HOME/.p10k.zsh" || warn "Pas de .p10k.zsh dans l’archive"
@@ -138,7 +149,7 @@ grep -q 'source ~/.p10k\.zsh' "$HOME/.zshrc" || printf '\n[[ -f ~/.p10k.zsh ]] &
 if ! grep -q '### VICTOR_BOOTSTRAP_BLOCK ###' "$HOME/.zshrc"; then
 cat >> "$HOME/.zshrc" <<'EOF'
 
-### VICTOR_BOOTSTRAP_BLOCK ###
+### BOOTSTRAP_BLOCK ###
 # Plugins custom (avec garde-fou affichage)
 ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
 
