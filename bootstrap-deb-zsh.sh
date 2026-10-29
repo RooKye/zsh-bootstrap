@@ -46,17 +46,8 @@ else
 fi
 
 # -----------------------------
-# Plugins
+# Plugins : installés / mis à jour par zsh-repair.sh (plus bas)
 # -----------------------------
-clone(){ [[ -d "$2" ]] || git clone --depth=1 "$1" "$2"; }
-
-log "Installation plugins"
-clone https://github.com/zsh-users/zsh-autosuggestions.git \
-  "$ZSH_CUSTOM/plugins/zsh-autosuggestions"
-clone https://github.com/zsh-users/zsh-syntax-highlighting.git \
-  "$ZSH_CUSTOM/plugins/zsh-syntax-highlighting"
-clone https://github.com/marlonrichert/zsh-autocomplete.git \
-  "$ZSH_CUSTOM/plugins/zsh-autocomplete"
 
 # -----------------------------
 # Nerd Font (Meslo)
@@ -124,59 +115,17 @@ else
 fi
 
 # -----------------------------
-# Patch .zshrc (force p10k)
+# Plugins + patch .zshrc (idempotent)
+#   zsh-repair.sh installe/met à jour les plugins, nettoie les anciens blocs,
+#   charge zsh-autocomplete AVANT oh-my-zsh et syntax-highlighting en dernier.
 # -----------------------------
-log "Patch .zshrc (force p10k + auto-complete ON)"
-[[ -f "$HOME/.zshrc" ]] || touch "$HOME/.zshrc"
-
-# export ZSH
-grep -q '^export ZSH=' "$HOME/.zshrc" || printf '\nexport ZSH="$HOME/.oh-my-zsh"\n' >> "$HOME/.zshrc"
-
-# force theme
-if grep -q '^ZSH_THEME=' "$HOME/.zshrc"; then
-  sed -i 's|^ZSH_THEME=.*|ZSH_THEME="powerlevel10k/powerlevel10k"|' "$HOME/.zshrc"
-else
-  printf 'ZSH_THEME="powerlevel10k/powerlevel10k"\n' >> "$HOME/.zshrc"
+REPAIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/zsh-repair.sh"
+if [[ ! -f "$REPAIR" ]]; then
+  REPAIR="$(mktemp)"
+  curl -fsSL "https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/zsh-repair.sh" -o "$REPAIR" \
+    || die "Téléchargement de zsh-repair.sh impossible"
 fi
-
-# source OMZ
-grep -q 'source \$ZSH/oh-my-zsh\.sh' "$HOME/.zshrc" || printf '\nsource $ZSH/oh-my-zsh.sh\n' >> "$HOME/.zshrc"
-
-# source p10k config
-grep -q 'source ~/.p10k\.zsh' "$HOME/.zshrc" || printf '\n[[ -f ~/.p10k.zsh ]] && source ~/.p10k.zsh\n' >> "$HOME/.zshrc"
-
-# Stable block (idempotent)
-if ! grep -q '### VICTOR_BOOTSTRAP_BLOCK ###' "$HOME/.zshrc"; then
-cat >> "$HOME/.zshrc" <<'EOF'
-
-### BOOTSTRAP_BLOCK ###
-# Plugins custom (avec garde-fou affichage)
-ZSH_CUSTOM="${ZSH_CUSTOM:-$HOME/.oh-my-zsh/custom}"
-
-# Auto-complete ON par défaut, mais désactivé sur terminaux "à risque"
-# Override: FORCE_AUTOCOMPLETE=1 pour forcer l'activation
-_term_ok=1
-case "${TERM:-}" in
-  ""|dumb|linux) _term_ok=0 ;;
-esac
-
-if [[ "${FORCE_AUTOCOMPLETE:-0}" == "1" ]]; then
-  _term_ok=1
-fi
-
-if [[ "$_term_ok" == "1" ]] && [[ -f "${ZSH_CUSTOM}/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh" ]]; then
-  source "${ZSH_CUSTOM}/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
-fi
-
-[[ -f "${ZSH_CUSTOM}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh" ]] && \
-  source "${ZSH_CUSTOM}/plugins/zsh-autosuggestions/zsh-autosuggestions.zsh"
-
-# syntax-highlighting DOIT être chargé en dernier
-[[ -f "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] && \
-  source "${ZSH_CUSTOM}/plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
-### END VICTOR_BOOTSTRAP_BLOCK ###
-EOF
-fi
+ZSH="$HOME/.oh-my-zsh" ZSH_CUSTOM="$ZSH_CUSTOM" bash "$REPAIR"
 
 # -----------------------------
 # Default shell
@@ -188,4 +137,4 @@ fi
 
 log "OK ✅"
 warn "Redémarre ton terminal ou fais: exec zsh"
-warn "Si autocomplete bug l’affichage: export FORCE_AUTOCOMPLETE=0 (ou commente dans .zshrc)"
+warn "Désactiver zsh-autocomplete : echo 'ZSH_BOOTSTRAP_AUTOCOMPLETE=0' >> ~/.zshenv"
