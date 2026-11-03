@@ -9,14 +9,24 @@
 #  - charge zsh-autocomplete AVANT oh-my-zsh (qui appelle compinit)
 #  - charge autosuggestions puis syntax-highlighting EN DERNIER
 #  - ajoute skip_global_compinit=1 dans ~/.zshenv (Debian / Ubuntu / Kali)
-#  - vide les caches de complétion
+#  - neutralise les appels à compinit du .zshrc (zsh-autocomplete s'en charge)
+#  - vide les caches de complétion (.zcompdump & co)
+#  - WSL : retire les fins de ligne Windows (CRLF) des dotfiles et des plugins
 #  - vérifie la syntaxe et restaure la sauvegarde en cas de problème
+#  - teste un démarrage de zsh et vérifie que les fonctions du plugin sont
+#    bien enregistrées (_autocomplete__history_lines, _autocomplete__unambiguous...)
+#
+# Cause des erreurs "command not found: _autocomplete__..." :
+#   ces fonctions sont dans zsh-autocomplete/Completions et ne sont
+#   enregistrées que par un compinit lancé APRÈS le chargement du plugin.
 #
 # Idempotent : peut être relancé autant de fois que nécessaire.
 #
-# Usage :
+# Usage (Kali, Debian, Ubuntu, WSL) :
 #   bash zsh-repair.sh
 #   curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/zsh-repair.sh | bash
+# Depuis un fichier téléchargé sous Windows (WSL) :
+#   tr -d '\r' < /mnt/c/Users/<toi>/Downloads/zsh-repair.sh | bash
 #
 # Options (variables d'environnement) :
 #   ZSH_BOOTSTRAP_NO_UPDATE=1   ne pas faire de git pull sur les plugins
@@ -36,8 +46,35 @@ CUSTOM_DIR="${ZSH_CUSTOM:-$OMZ_DIR/custom}"
 command -v git >/dev/null 2>&1 || die "git requis (sudo apt install git)"
 [[ -f "$OMZ_DIR/oh-my-zsh.sh" ]] || die "Oh My Zsh introuvable dans $OMZ_DIR (lance d'abord install.sh)"
 
+IS_WSL=0
+grep -qiE 'microsoft|wsl' /proc/version 2>/dev/null && IS_WSL=1
+[[ "$IS_WSL" == 1 ]] && log "WSL détecté"
+
+TMP="$(mktemp)"
+trap 'rm -f "$TMP"' EXIT
+
+# git sans conversion CRLF (core.autocrlf=true est fréquent sous WSL)
+GIT=(git -c core.autocrlf=false -c core.eol=lf)
+
 # -----------------------------------------------------------------------------
-# 1. Plugins : installation / mise à jour / réparation
+# 1. Sauvegarde + fins de ligne Windows
+# -----------------------------------------------------------------------------
+[[ -f "$ZSHRC" ]] || touch "$ZSHRC"
+TS="$(date +%Y%m%d-%H%M%S)"
+BACKUP="$ZSHRC.bak-$TS"
+cp "$ZSHRC" "$BACKUP"
+[[ -f "$ZSHENV" ]] && cp "$ZSHENV" "$ZSHENV.bak-$TS"
+log "Sauvegarde : $BACKUP"
+
+for f in "$ZSHRC" "$ZSHENV" "$HOME/.p10k.zsh" "$ZDOT/.zprofile"; do
+  if [[ -f "$f" ]] && grep -q $'\r' "$f"; then
+    sed -i 's/\r$//' "$f"
+    warn "Fins de ligne Windows (CRLF) corrigées : $f"
+  fi
+done
+
+# -----------------------------------------------------------------------------
+# 2. Plugins : installation / mise à jour / réparation
 # -----------------------------------------------------------------------------
 # nom|url|fichier attendu
 PLUGINS=(
@@ -52,9 +89,23 @@ for entry in "${PLUGINS[@]}"; do
   IFS='|' read -r name url file <<<"$entry"
   dir="$CUSTOM_DIR/plugins/$name"
 
-  if [[ -d "$dir/.git" && -f "$dir/$file" ]]; then
+  ok=1
+  [[ -d "$dir/.git" && -f "$dir/$file" ]] || ok=0
+  # zsh-autocomplete : ses fonctions de complétion doivent être là
+  if [[ "$ok" == 1 && "$name" == zsh-autocomplete ]]; then
+    for c in _autocomplete__history_lines _autocomplete__unambiguous _autocomplete__should_add_space; do
+      [[ -f "$dir/Completions/$c" ]] || ok=0
+    done
+  fi
+  # fichiers en CRLF (clone fait avec core.autocrlf=true) -> réinstallation
+  if [[ "$ok" == 1 ]] && grep -rlqI $'\r' "$dir" --exclude-dir=.git 2>/dev/null; then
+    warn "$name : fichiers en CRLF (fins de ligne Windows)"
+    ok=0
+  fi
+
+  if [[ "$ok" == 1 ]]; then
     if [[ "${ZSH_BOOTSTRAP_NO_UPDATE:-0}" != 1 ]]; then
-      if git -C "$dir" pull --ff-only -q 2>/dev/null; then
+      if "${GIT[@]}" -C "$dir" pull --ff-only -q 2>/dev/null; then
         echo "    $name : à jour"
       else
         warn "$name : mise à jour impossible, réinstallation"
@@ -64,23 +115,15 @@ for entry in "${PLUGINS[@]}"; do
       echo "    $name : présent"
     fi
   elif [[ -e "$dir" ]]; then
-    warn "$name : installation incomplète, réinstallation"
+    warn "$name : installation incomplète ou abîmée, réinstallation"
     rm -rf "$dir"
   fi
 
   if [[ ! -d "$dir" ]]; then
-    git clone -q --depth=1 "$url" "$dir" || die "Clonage de $name impossible"
+    "${GIT[@]}" clone -q --depth=1 "$url" "$dir" || die "Clonage de $name impossible"
     echo "    $name : installé"
   fi
 done
-
-# -----------------------------------------------------------------------------
-# 2. Sauvegarde
-# -----------------------------------------------------------------------------
-[[ -f "$ZSHRC" ]] || touch "$ZSHRC"
-BACKUP="$ZSHRC.bak-$(date +%Y%m%d-%H%M%S)"
-cp "$ZSHRC" "$BACKUP"
-log "Sauvegarde : $BACKUP"
 
 # -----------------------------------------------------------------------------
 # 3. Nettoyage du .zshrc
@@ -88,11 +131,10 @@ log "Sauvegarde : $BACKUP"
 #    - nos propres blocs (pour rester idempotent)
 #    - chargements isolés des 3 plugins (source simple, "&& \", if/then/fi)
 #    - les 3 plugins dans plugins=(...) d'Oh My Zsh
-#    - appels directs à compinit (gérés par zsh-autocomplete)
+#    - appels à compinit (gérés par zsh-autocomplete), y compris
+#      "autoload -Uz compinit && compinit", "compinit -i", "compinit -C"...
 # -----------------------------------------------------------------------------
 log "Nettoyage du .zshrc"
-TMP="$(mktemp)"
-trap 'rm -f "$TMP"' EXIT
 
 awk '
   { line[NR] = $0 }
@@ -140,8 +182,12 @@ awk '
         if (l ~ /^[[:space:]]*$/ && line[i] !~ /^[[:space:]]*$/) continue
       }
 
-      # compinit direct -> commenté (zsh-autocomplete s en occupe)
-      if (l ~ /^[[:space:]]*compinit([[:space:]]|$)/) l = "# " l "  # désactivé par zsh-bootstrap (géré par zsh-autocomplete)"
+      # Appel à compinit -> remplacé par ":" (no-op, garde un if/fi valide)
+      if (l !~ /^[[:space:]]*#/ && l !~ /désactivé par zsh-bootstrap/ &&
+          l ~ /(^|[[:space:];&|({])compinit([[:space:];)]|$)/) {
+        match(l, /^[[:space:]]*/)
+        l = substr(l, 1, RLENGTH) ": # " substr(l, RLENGTH + 1) "  # désactivé par zsh-bootstrap (géré par zsh-autocomplete)"
+      }
 
       print l
     }
@@ -238,11 +284,28 @@ fi
 # -----------------------------------------------------------------------------
 log "Vidage des caches de complétion"
 CACHE="${XDG_CACHE_HOME:-$HOME/.cache}"
-rm -f "$ZDOT"/.zcompdump* "$CACHE"/zsh/compdump* "$OMZ_DIR"/cache/.zcompdump* 2>/dev/null || true
+rm -f "$ZDOT"/.zcompdump* "$HOME"/.zcompdump* \
+      "$CACHE"/zcompdump* "$CACHE"/.zcompdump* "$CACHE"/zsh/compdump* "$CACHE"/zsh/.zcompdump* \
+      "$CACHE"/oh-my-zsh/.zcompdump* "$OMZ_DIR"/cache/.zcompdump* "$OMZ_DIR"/.zcompdump* 2>/dev/null || true
 rm -rf "$CACHE"/zsh-autocomplete 2>/dev/null || true
 
 # -----------------------------------------------------------------------------
-# 8. Vérifications
+# 8. Autres fichiers de démarrage qui pourraient recasser l'ordre
+# -----------------------------------------------------------------------------
+others=()
+for f in "$ZSHENV" "$ZDOT/.zprofile" "$ZDOT/.zlogin" "$CUSTOM_DIR"/*.zsh "$ZDOT"/.zshrc.d/*; do
+  [[ -f "$f" ]] || continue
+  while IFS= read -r hit; do others+=("$f:$hit"); done < <(
+    grep -nE '(^|[[:space:];&|({])compinit([[:space:];)]|$)|zsh-autocomplete' "$f" \
+      | grep -vE '^[0-9]+:[[:space:]]*#|skip_global_compinit' || true)
+done
+if (( ${#others[@]} )); then
+  warn "Ces lignes chargent zsh-autocomplete ou lancent compinit ailleurs, à retirer si l'erreur persiste :"
+  printf '      %s\n' "${others[@]}"
+fi
+
+# -----------------------------------------------------------------------------
+# 9. Vérifications
 # -----------------------------------------------------------------------------
 if command -v zsh >/dev/null 2>&1; then
   if ! zsh -n "$ZSHRC" 2>"$TMP"; then
@@ -259,6 +322,28 @@ if [[ -z "$ac_line" || -z "$omz_line" || "$ac_line" -ge "$omz_line" ]]; then
   die "Ordre de chargement inattendu : sauvegarde restaurée"
 fi
 
-log "OK ✅  (zsh-autocomplete ligne $ac_line, oh-my-zsh ligne $omz_line)"
+log "Ordre OK (zsh-autocomplete ligne $ac_line, oh-my-zsh ligne $omz_line)"
+
+# Démarrage réel de zsh : les fonctions du plugin doivent être enregistrées
+if command -v zsh >/dev/null 2>&1; then
+  log "Test de démarrage de zsh"
+  check='for f in _autocomplete__history_lines _autocomplete__unambiguous _autocomplete__should_add_space; do
+           (( $+functions[$f] )) || print -r -- "MANQUANT $f"
+         done'
+  out="$(cd "$HOME" && TERM=xterm-256color ZSH_BOOTSTRAP_AUTOCOMPLETE=1 \
+         POWERLEVEL9K_INSTANT_PROMPT=off POWERLEVEL9K_DISABLE_CONFIGURATION_WIZARD=true \
+         timeout 30 zsh -i -c "$check" </dev/null 2>&1)" || true
+  if grep -q 'MANQUANT' <<<"$out"; then
+    printf '%s\n' "$out" | grep -E 'MANQUANT|not found|error' >&2 || true
+    AC_FAIL=1
+    warn "zsh-autocomplete n'est pas bien initialisé : regarde les lignes signalées plus haut,"
+    warn "ou désactive-le : echo 'ZSH_BOOTSTRAP_AUTOCOMPLETE=0' >> \"$ZSHENV\""
+  else
+    echo "    fonctions zsh-autocomplete : OK"
+    grep -E 'command not found|parse error' <<<"$out" | sed 's/^/    [!] /' || true
+  fi
+fi
+
+if [[ "${AC_FAIL:-0}" == 1 ]]; then warn "Terminé, mais avec l'avertissement ci-dessus"; else log "Terminé ✅"; fi
 warn "Recharge ton shell : exec zsh"
 warn "Retour arrière : cp \"$BACKUP\" \"$ZSHRC\""

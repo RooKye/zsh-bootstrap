@@ -1,4 +1,4 @@
-# ZSH Bootstrap (Debian / Kali)
+# ZSH Bootstrap (Debian / Kali / Ubuntu / WSL)
 
 Installe automatiquement :
 - zsh + oh-my-zsh
@@ -27,13 +27,22 @@ curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/zsh-repai
 exec zsh
 ```
 
+Sous WSL, avec le fichier téléchargé côté Windows :
+```bash
+tr -d '\r' < /mnt/c/Users/<toi>/Downloads/zsh-repair.sh | bash
+exec zsh
+```
+
 `zsh-repair.sh` :
 - installe / met à jour les plugins
 - nettoie les anciens blocs du bootstrap (et leurs doublons)
 - charge `zsh-autocomplete` **avant** oh-my-zsh (qui appelle `compinit`)
 - charge `zsh-syntax-highlighting` en dernier
 - ajoute `skip_global_compinit=1` dans `~/.zshenv` (Debian/Ubuntu/Kali)
+- neutralise les appels à `compinit` du `.zshrc`
 - vide les caches de complétion
+- WSL : corrige les fins de ligne Windows (CRLF) des dotfiles et des plugins
+- teste un démarrage de zsh et vérifie que les fonctions du plugin sont enregistrées
 - sauvegarde le `.zshrc` et le restaure si le résultat est invalide
 
 ## Options
