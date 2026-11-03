@@ -33,8 +33,22 @@ tr -d '\r' < /mnt/c/Users/<toi>/Downloads/zsh-repair.sh | bash
 exec zsh
 ```
 
+### Pourquoi c'est cassé depuis fin août 2026
+
+Le bug vient de zsh-autocomplete lui-même : le commit
+[`b07922e`](https://github.com/marlonrichert/zsh-autocomplete/commit/b07922e84ce9a5d8401425235954ce9ce185a770)
+du 26/08/2026 empêche le plugin d'enregistrer ses fonctions `_autocomplete__*`
+quand un autre `compinit` (Oh My Zsh, `/etc/zsh/zshrc`) passe avant lui
+([issue #896](https://github.com/marlonrichert/zsh-autocomplete/issues/896),
+[PR #903](https://github.com/marlonrichert/zsh-autocomplete/pull/903) pas encore fusionnée).
+Comme le bootstrap clonait la branche `main`, toutes les machines installées ou
+mises à jour depuis sont touchées (Kali, Ubuntu, WSL...).
+
+Le bootstrap fige donc zsh-autocomplete sur `027cdab` (05/08/2026), le dernier
+commit avant ces changements, et ajoute le correctif de la PR #903 dans le `.zshrc`.
+
 `zsh-repair.sh` :
-- installe / met à jour les plugins
+- installe les plugins, avec zsh-autocomplete figé sur une version qui marche
 - nettoie les anciens blocs du bootstrap (et leurs doublons)
 - charge `zsh-autocomplete` **avant** oh-my-zsh (qui appelle `compinit`)
 - charge `zsh-syntax-highlighting` en dernier
@@ -54,4 +68,6 @@ exec zsh
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=0` | désactive zsh-autocomplete |
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=1` | force zsh-autocomplete même sur TERM `dumb` / `linux` |
 
-Pour `zsh-repair.sh` : `ZSH_BOOTSTRAP_NO_UPDATE=1` évite le `git pull` des plugins.
+Pour `zsh-repair.sh` :
+- `ZSH_BOOTSTRAP_NO_UPDATE=1` évite le `git pull` des autres plugins
+- `ZSH_BOOTSTRAP_AUTOCOMPLETE_REF=main` (ou un tag / sha) choisit une autre version de zsh-autocomplete, par exemple une fois le bug corrigé en amont

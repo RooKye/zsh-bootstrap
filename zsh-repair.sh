@@ -29,7 +29,10 @@
 #   tr -d '\r' < /mnt/c/Users/<toi>/Downloads/zsh-repair.sh | bash
 #
 # Options (variables d'environnement) :
-#   ZSH_BOOTSTRAP_NO_UPDATE=1   ne pas faire de git pull sur les plugins
+#   ZSH_BOOTSTRAP_NO_UPDATE=1             pas de git pull sur autosuggestions /
+#                                         syntax-highlighting
+#   ZSH_BOOTSTRAP_AUTOCOMPLETE_REF=<ref>  version de zsh-autocomplete (sha, tag ou
+#                                         branche ; défaut : version figée, voir plus bas)
 # =============================================================================
 set -euo pipefail
 
@@ -77,33 +80,64 @@ done
 # 2. Plugins : installation / mise à jour / réparation
 # -----------------------------------------------------------------------------
 # nom|url|fichier attendu
+# zsh-autocomplete est FIGÉ sur une version connue :
+#   le commit b07922e (26/08/2026) de la branche main a cassé le chargement des
+#   fonctions _autocomplete__* quand un autre compinit (Oh My Zsh, /etc/zsh/zshrc)
+#   tourne avant le plugin, et 7633bc7 (même jour) télécharge zasync au démarrage
+#   (complétion en temps réel qui ne démarre pas).
+#   Voir https://github.com/marlonrichert/zsh-autocomplete/issues/896
+#   027cdab (05/08/2026) = dernier commit avant ces changements.
+#   Pour suivre main malgré tout : ZSH_BOOTSTRAP_AUTOCOMPLETE_REF=main
+AC_REF="${ZSH_BOOTSTRAP_AUTOCOMPLETE_REF:-027cdab14451e98c9d36d72b1f79d9488ac88e46}"
+
+# nom|url|fichier attendu|version ("" = branche par défaut, à jour)
 PLUGINS=(
-  "zsh-autocomplete|https://github.com/marlonrichert/zsh-autocomplete.git|zsh-autocomplete.plugin.zsh"
-  "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|zsh-autosuggestions.zsh"
-  "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git|zsh-syntax-highlighting.zsh"
+  "zsh-autocomplete|https://github.com/marlonrichert/zsh-autocomplete.git|zsh-autocomplete.plugin.zsh|$AC_REF"
+  "zsh-autosuggestions|https://github.com/zsh-users/zsh-autosuggestions.git|zsh-autosuggestions.zsh|"
+  "zsh-syntax-highlighting|https://github.com/zsh-users/zsh-syntax-highlighting.git|zsh-syntax-highlighting.zsh|"
 )
+
+# Place un dépôt sur une version précise (sha, tag ou branche)
+checkout_ref() { # dir ref
+  local dir="$1" ref="$2"
+  "${GIT[@]}" -C "$dir" fetch -q origin 2>/dev/null || true
+  if "${GIT[@]}" -C "$dir" rev-parse -q --verify "origin/$ref^{commit}" >/dev/null 2>&1; then
+    "${GIT[@]}" -C "$dir" -c advice.detachedHead=false checkout -q -B "$ref" "origin/$ref"
+  else
+    "${GIT[@]}" -C "$dir" -c advice.detachedHead=false checkout -q "$ref"
+  fi
+}
 
 log "Plugins"
 mkdir -p "$CUSTOM_DIR/plugins"
 for entry in "${PLUGINS[@]}"; do
-  IFS='|' read -r name url file <<<"$entry"
+  IFS='|' read -r name url file ref <<<"$entry"
   dir="$CUSTOM_DIR/plugins/$name"
 
   ok=1
   [[ -d "$dir/.git" && -f "$dir/$file" ]] || ok=0
-  # zsh-autocomplete : ses fonctions de complétion doivent être là
-  if [[ "$ok" == 1 && "$name" == zsh-autocomplete ]]; then
-    for c in _autocomplete__history_lines _autocomplete__unambiguous _autocomplete__should_add_space; do
-      [[ -f "$dir/Completions/$c" ]] || ok=0
-    done
-  fi
   # fichiers en CRLF (clone fait avec core.autocrlf=true) -> réinstallation
   if [[ "$ok" == 1 ]] && grep -rlqI $'\r' "$dir" --exclude-dir=.git 2>/dev/null; then
     warn "$name : fichiers en CRLF (fins de ligne Windows)"
     ok=0
   fi
 
-  if [[ "$ok" == 1 ]]; then
+  if [[ "$ok" == 1 && -n "$ref" ]]; then
+    # version figée : on se place dessus si besoin (un clone --depth=1 ne la contient pas)
+    want="$("${GIT[@]}" -C "$dir" rev-parse -q --verify "$ref^{commit}" 2>/dev/null || true)"
+    have="$("${GIT[@]}" -C "$dir" rev-parse HEAD 2>/dev/null || true)"
+    # un sha déjà en place ne bouge plus ; une branche/tag est re-synchronisé
+    if [[ -z "$want" || "$want" != "$have" || ! "$ref" =~ ^[0-9a-f]{40}$ ]]; then
+      if checkout_ref "$dir" "$ref" 2>/dev/null; then
+        echo "    $name : version $ref"
+      else
+        warn "$name : impossible de passer sur $ref, réinstallation"
+        rm -rf "$dir"
+      fi
+    else
+      echo "    $name : version $ref"
+    fi
+  elif [[ "$ok" == 1 ]]; then
     if [[ "${ZSH_BOOTSTRAP_NO_UPDATE:-0}" != 1 ]]; then
       if "${GIT[@]}" -C "$dir" pull --ff-only -q 2>/dev/null; then
         echo "    $name : à jour"
@@ -120,8 +154,22 @@ for entry in "${PLUGINS[@]}"; do
   fi
 
   if [[ ! -d "$dir" ]]; then
-    "${GIT[@]}" clone -q --depth=1 "$url" "$dir" || die "Clonage de $name impossible"
-    echo "    $name : installé"
+    if [[ -n "$ref" ]]; then
+      "${GIT[@]}" clone -q --filter=blob:none "$url" "$dir" 2>/dev/null \
+        || "${GIT[@]}" clone -q "$url" "$dir" || die "Clonage de $name impossible"
+      checkout_ref "$dir" "$ref" || die "$name : version $ref introuvable"
+      echo "    $name : installé (version $ref)"
+    else
+      "${GIT[@]}" clone -q --depth=1 "$url" "$dir" || die "Clonage de $name impossible"
+      echo "    $name : installé"
+    fi
+  fi
+
+  # zsh-autocomplete : ses fonctions de complétion doivent être là
+  if [[ "$name" == zsh-autocomplete ]]; then
+    for c in _autocomplete__history_lines _autocomplete__unambiguous _autocomplete__should_add_space; do
+      [[ -f "$dir/Completions/$c" ]] || die "$name : fichier Completions/$c manquant après installation"
+    done
   fi
 done
 
@@ -237,7 +285,12 @@ case "${ZSH_BOOTSTRAP_AUTOCOMPLETE:-auto}:${TERM:-dumb}" in
   0:*|auto:dumb|auto:linux) ;;
   *)
     _zb_ac="${ZSH_CUSTOM:-${ZSH:-$HOME/.oh-my-zsh}/custom}/plugins/zsh-autocomplete/zsh-autocomplete.plugin.zsh"
-    [[ -r "$_zb_ac" ]] && source "$_zb_ac"
+    if [[ -r "$_zb_ac" ]]; then
+      source "$_zb_ac"
+      # Enregistre les fonctions internes du plugin quel que soit le moment
+      # où compinit tourne (correctif proposé en amont, PR #903)
+      builtin autoload -Uz -- "${_zb_ac:h}"/Completions/_autocomplete__*(N.:t)
+    fi
     unset _zb_ac
     ;;
 esac
