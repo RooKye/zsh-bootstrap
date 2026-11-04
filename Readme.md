@@ -4,7 +4,10 @@ Installe automatiquement :
 - zsh + oh-my-zsh
 - powerlevel10k
 - plugins (autosuggestions, syntax-highlighting, autocomplete)
-- outils réseau (net-tools, dnsutils, tcpdump, iproute2)
+- outils réseau (net-tools / `ifconfig`, dnsutils, tcpdump, iproute2)
+- wireshark + tshark et openssh (client + serveur), **installés mais désactivés** :
+  - `sshd` arrêté et non lancé au démarrage (s'il était déjà installé avant, son état n'est pas modifié)
+  - Wireshark : capture réservée à root
 - importe la config `.zshrc` + `.p10k.zsh`
 
 ## One-liner
@@ -13,6 +16,21 @@ curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/install.s
 ```
 
 Le script est idempotent : on peut le relancer sans dupliquer la config.
+
+Sans wireshark / openssh :
+```bash
+curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/install.sh | ZSH_BOOTSTRAP_TOOLS=0 bash
+```
+
+### Activer les outils plus tard
+
+```bash
+# SSH
+sudo systemctl enable --now ssh        # WSL sans systemd : sudo service ssh start
+# Wireshark sans sudo (puis se reconnecter)
+sudo dpkg-reconfigure wireshark-common
+sudo usermod -aG wireshark "$USER"
+```
 
 ## Réparer une install existante
 
@@ -67,6 +85,9 @@ commit avant ces changements, et ajoute le correctif de la PR #903 dans le `.zsh
 |---|---|
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=0` | désactive zsh-autocomplete |
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=1` | force zsh-autocomplete même sur TERM `dumb` / `linux` |
+
+Pour `install.sh` / `bootstrap-deb-zsh.sh` :
+- `ZSH_BOOTSTRAP_TOOLS=0` n'installe pas wireshark / tshark / openssh
 
 Pour `zsh-repair.sh` :
 - `ZSH_BOOTSTRAP_NO_UPDATE=1` évite le `git pull` des autres plugins

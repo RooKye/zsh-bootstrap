@@ -20,6 +20,63 @@ sudo apt-get install -y \
   net-tools dnsutils tcpdump iproute2
 
 # -----------------------------
+# Outils réseau : installés mais DÉSACTIVÉS
+#   - wireshark + tshark : capture réservée à root (pas de groupe wireshark)
+#   - openssh-client + openssh-server : sshd arrêté et non lancé au démarrage
+#   (ifconfig vient de net-tools, déjà installé plus haut)
+# Désactiver cette étape : ZSH_BOOTSTRAP_TOOLS=0
+# -----------------------------
+if [[ "${ZSH_BOOTSTRAP_TOOLS:-1}" == "1" ]]; then
+  log "Outils : wireshark, tshark, openssh (installés mais désactivés)"
+
+  # sshd déjà présent avant le script : on ne touche pas à son état
+  # (évite de couper l'accès à une machine qu'on administre en SSH)
+  ssh_was_installed=0
+  dpkg -s openssh-server >/dev/null 2>&1 && ssh_was_installed=1
+
+  # Wireshark : répond "non" à "autoriser la capture aux non-root ?"
+  echo "wireshark-common wireshark-common/install-setuid boolean false" \
+    | sudo debconf-set-selections
+
+  # Empêche apt de démarrer les services pendant l'installation
+  policy_added=0
+  trap 'if [[ "${policy_added:-0}" == 1 ]]; then sudo rm -f /usr/sbin/policy-rc.d; fi' EXIT
+  if [[ ! -e /usr/sbin/policy-rc.d ]]; then
+    printf '#!/bin/sh\nexit 101\n' | sudo tee /usr/sbin/policy-rc.d >/dev/null
+    sudo chmod +x /usr/sbin/policy-rc.d
+    policy_added=1
+  fi
+
+  tools_rc=0
+  sudo env DEBIAN_FRONTEND=noninteractive apt-get install -y \
+    wireshark tshark openssh-client openssh-server || tools_rc=$?
+
+  if [[ "$policy_added" == 1 ]]; then
+    sudo rm -f /usr/sbin/policy-rc.d
+    policy_added=0
+  fi
+  [[ "$tools_rc" == 0 ]] || die "Installation des outils impossible (apt-get code $tools_rc)"
+
+  # SSH : désactivé (service + socket d'activation Ubuntu 22.10+)
+  if [[ "$ssh_was_installed" == 1 ]]; then
+    warn "openssh-server était déjà installé : son état n'est pas modifié"
+  elif [[ -d /run/systemd/system ]]; then
+    for unit in ssh.socket ssh.service; do
+      sudo systemctl disable --now "$unit" >/dev/null 2>&1 || true
+    done
+    echo "    sshd : $(systemctl is-enabled ssh.service 2>/dev/null || echo disabled)"
+  else
+    # WSL sans systemd / sysvinit
+    sudo service ssh stop >/dev/null 2>&1 || true
+    sudo update-rc.d ssh disable >/dev/null 2>&1 || true
+    echo "    sshd : arrêté (pas de systemd : rien ne le relance au démarrage)"
+  fi
+  echo "    wireshark : capture réservée à root"
+else
+  warn "Outils wireshark / openssh ignorés (ZSH_BOOTSTRAP_TOOLS=0)"
+fi
+
+# -----------------------------
 # Oh My Zsh
 # -----------------------------
 if [[ ! -d "$HOME/.oh-my-zsh" ]]; then
@@ -138,3 +195,7 @@ fi
 log "OK ✅"
 warn "Redémarre ton terminal ou fais: exec zsh"
 warn "Désactiver zsh-autocomplete : echo 'ZSH_BOOTSTRAP_AUTOCOMPLETE=0' >> ~/.zshenv"
+if [[ "${ZSH_BOOTSTRAP_TOOLS:-1}" == "1" ]]; then
+  warn "Activer SSH       : sudo systemctl enable --now ssh   (WSL sans systemd : sudo service ssh start)"
+  warn "Wireshark non-root : sudo dpkg-reconfigure wireshark-common && sudo usermod -aG wireshark \$USER  (puis reconnexion)"
+fi
