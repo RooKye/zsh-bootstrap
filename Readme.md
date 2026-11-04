@@ -5,9 +5,8 @@ Installe automatiquement :
 - powerlevel10k
 - plugins (autosuggestions, syntax-highlighting, autocomplete)
 - outils réseau (net-tools / `ifconfig`, dnsutils, tcpdump, iproute2)
-- wireshark + tshark et openssh (client + serveur), **installés mais désactivés** :
-  - `sshd` arrêté et non lancé au démarrage (s'il était déjà installé avant, son état n'est pas modifié)
-  - Wireshark : capture réservée à root
+- wireshark + tshark, **activés** : capture sans sudo (ton utilisateur est ajouté au groupe `wireshark`, actif après reconnexion)
+- openssh (client + serveur), **serveur désactivé** : `sshd` arrêté et non lancé au démarrage (s'il était déjà installé avant, son état n'est pas modifié)
 - importe la config `.zshrc` + `.p10k.zsh`
 
 ## One-liner
@@ -22,14 +21,10 @@ Sans wireshark / openssh :
 curl -fsSL https://raw.githubusercontent.com/RooKye/zsh-bootstrap/main/install.sh | ZSH_BOOTSTRAP_TOOLS=0 bash
 ```
 
-### Activer les outils plus tard
+### Activer SSH plus tard
 
 ```bash
-# SSH
 sudo systemctl enable --now ssh        # WSL sans systemd : sudo service ssh start
-# Wireshark sans sudo (puis se reconnecter)
-sudo dpkg-reconfigure wireshark-common
-sudo usermod -aG wireshark "$USER"
 ```
 
 ## Réparer une install existante
