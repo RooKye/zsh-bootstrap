@@ -80,6 +80,7 @@ commit avant ces changements, et ajoute le correctif de la PR #903 dans le `.zsh
 |---|---|
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=0` | désactive zsh-autocomplete |
 | `ZSH_BOOTSTRAP_AUTOCOMPLETE=1` | force zsh-autocomplete même sur TERM `dumb` / `linux` |
+| `ZSH_BOOTSTRAP_HISTORY_KEYS=menu` | ↑/↓ ouvrent le menu d'historique de zsh-autocomplete (par défaut : historique classique, filtré par ce qui est déjà tapé) |
 
 Pour `install.sh` / `bootstrap-deb-zsh.sh` :
 - `ZSH_BOOTSTRAP_TOOLS=0` n'installe pas wireshark / tshark / openssh

@@ -309,6 +309,22 @@ _zb_plugins="${ZSH_CUSTOM:-${ZSH:-$HOME/.oh-my-zsh}/custom}/plugins"
 [[ -r "$_zb_plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh" ]] &&
   source "$_zb_plugins/zsh-syntax-highlighting/zsh-syntax-highlighting.zsh"
 unset _zb_plugins
+
+# Flèches ↑/↓ : historique classique, filtré par ce qui est déjà tapé
+# (zsh-autocomplete les remplace par son menu d'historique).
+# Le menu reste dispo avec Alt+↑, la recherche avec Ctrl+R.
+# Garder le comportement zsh-autocomplete : ZSH_BOOTSTRAP_HISTORY_KEYS=menu dans ~/.zshenv
+if [[ "${ZSH_BOOTSTRAP_HISTORY_KEYS:-classic}" != menu ]]; then
+  autoload -Uz up-line-or-beginning-search down-line-or-beginning-search
+  zle -N up-line-or-beginning-search
+  zle -N down-line-or-beginning-search
+  for _zb_km in emacs viins vicmd; do
+    bindkey -M "$_zb_km" \
+      '^[[A' up-line-or-beginning-search   '^[OA' up-line-or-beginning-search \
+      '^[[B' down-line-or-beginning-search '^[OB' down-line-or-beginning-search
+  done
+  unset _zb_km
+fi
 # <<< zsh-bootstrap:plugins <<<
 EOF
 )"
